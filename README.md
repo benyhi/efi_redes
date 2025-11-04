@@ -1,4 +1,4 @@
-# 📍 GPS Tracker Simple
+# 📍 GPS Tracker
 
 Sistema de tracking GPS en tiempo real con múltiples usuarios conectados simultáneamente.
 
