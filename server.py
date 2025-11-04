@@ -114,7 +114,15 @@ def handle_connect():
 def handle_disconnect():
     print(f"👋 Cliente desconectado: {request.sid}")
     if request.sid in connected_users:
+        device_id = connected_users[request.sid]
+        # Eliminar usuario de la lista de conectados
         del connected_users[request.sid]
+        # Eliminar coordenadas del dispositivo
+        if device_id in live_coordinates:
+            del live_coordinates[device_id]
+            print(f"🗑️ Coordenadas eliminadas para dispositivo: {device_id}")
+            # Enviar actualización a todos los clientes restantes
+            socketio.emit('coordinates_update', live_coordinates)
 
 @socketio.on('location_update')
 def handle_location_update(data):
@@ -142,16 +150,11 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"   Error obteniendo usuarios: {e}")
     print("📍 Servidor listo para recibir coordenadas GPS")
-    
-    # Configuración para Railway
-    port = int(os.environ.get('PORT', 5000))
-    host = os.environ.get('HOST', '0.0.0.0')
-    
-    print(f"🌐 URL: http://{host}:{port}")
+    print("🌐 URL: http://localhost:5000")
     print("📝 Endpoints disponibles:")
     print("   - POST /login - Iniciar sesión")
     print("   - POST /register - Registrar usuario")
     print("   - GET /users - Listar usuarios")
     print("   - GET /status - Estado del servidor")
     
-    socketio.run(app, host=host, port=port, debug=False)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False)

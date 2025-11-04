@@ -198,9 +198,60 @@
         let myMarker;
         let isAuthenticated = false;
         let watchId = null;
-        let deviceId = 'device_' + Math.random().toString(36).substr(2, 9);
+        let deviceId;
+        let deviceName;
         let logEntries = [];
         const maxLogEntries = 50;
+
+        // Función para generar ID único basado en características del dispositivo
+        function generateDeviceId() {
+            // Usar características del navegador para generar un ID más consistente
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.textBaseline = 'top';
+            ctx.font = '14px Arial';
+            ctx.fillText('Device fingerprint', 2, 2);
+            
+            const fingerprint = [
+                navigator.userAgent,
+                navigator.language,
+                screen.width + 'x' + screen.height,
+                new Date().getTimezoneOffset(),
+                canvas.toDataURL()
+            ].join('|');
+            
+            // Generar hash simple del fingerprint
+            let hash = 0;
+            for (let i = 0; i < fingerprint.length; i++) {
+                const char = fingerprint.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convertir a 32bit
+            }
+            
+            // Simular formato MAC-like
+            const mac = Math.abs(hash).toString(16).padStart(12, '0');
+            return mac.match(/.{2}/g).join(':').toUpperCase().substring(0, 17);
+        }
+
+        // Función para generar nombre del dispositivo
+        function generateDeviceName() {
+            const platform = navigator.platform || 'Unknown';
+            const browser = getBrowserInfo();
+            return `${platform}-${browser}`;
+        }
+
+        function getBrowserInfo() {
+            const ua = navigator.userAgent;
+            if (ua.includes('Chrome')) return 'Chrome';
+            if (ua.includes('Firefox')) return 'Firefox';
+            if (ua.includes('Safari')) return 'Safari';
+            if (ua.includes('Edge')) return 'Edge';
+            return 'Browser';
+        }
+
+        // Inicializar identificadores del dispositivo
+        deviceId = generateDeviceId();
+        deviceName = generateDeviceName();
 
         // Elementos DOM
         const loginSection = document.getElementById('loginSection');
@@ -321,6 +372,8 @@
                 
                 if (response.ok) {
                     addLog('success', 'Autenticación exitosa');
+                    addLog('info', 'Información del dispositivo', 
+                        `MAC: ${deviceId} | Nombre: ${deviceName} | Plataforma: ${navigator.platform}`);
                     showMessage(loginStatus, '✅ Autenticación exitosa', 'success');
                     showDashboard();
                     connectSocket();
@@ -425,7 +478,8 @@
                 maximumAge: 60000
             };
 
-            addLog('info', 'Iniciando seguimiento GPS...', `Device ID: ${deviceId}`);
+            addLog('info', 'Iniciando seguimiento GPS...', 
+                `Device MAC: ${deviceId} | Nombre: ${deviceName}`);
 
             watchId = navigator.geolocation.watchPosition(
                 sendLocation,
@@ -466,7 +520,8 @@
                 longitude: position.coords.longitude,
                 accuracy: position.coords.accuracy,
                 timestamp: new Date().toISOString(),
-                name: 'Mi Dispositivo'
+                name: deviceName,
+                mac: deviceId
             };
 
             // Guardar la última ubicación conocida
@@ -491,9 +546,12 @@
 
         function updateMyLocation(coords) {
             myLocation.innerHTML = `
-                <div class="coord-item">📍 Lat: ${coords.latitude.toFixed(6)}</div>
+                <div class="coord-item"><strong>🟢 Mi Dispositivo</strong></div>
+                <div class="coord-item">📱MAC: ${coords.mac || coords.device_id}</div>
+                <div class="coord-item">💻 Nombre: ${coords.name}</div>
+                <div class="coord-item">📍Lat: ${coords.latitude.toFixed(6)}</div>
                 <div class="coord-item">📍 Lng: ${coords.longitude.toFixed(6)}</div>
-                <div class="coord-item">🎯 Precisión: ±${coords.accuracy}m</div>
+                <div class="coord-item">🎯 Precisión: ±${coords.accuracy.toFixed(1)}m</div>
                 <div class="coord-item">⏰ ${new Date(coords.timestamp).toLocaleTimeString()}</div>
             `;
 
@@ -502,7 +560,13 @@
                 map.removeLayer(myMarker);
             }
             myMarker = L.marker([coords.latitude, coords.longitude])
-                .bindPopup(`<b>${coords.name}</b><br>📍 ${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}`)
+                .bindPopup(`
+                    <b>🟢 Mi Dispositivo</b><br>
+                    <b>MAC:</b> ${coords.mac || coords.device_id}<br>
+                    <b>Nombre:</b> ${coords.name}<br>
+                    📍 ${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}<br>
+                    🎯 Precisión: ±${coords.accuracy.toFixed(1)}m
+                `)
                 .addTo(map);
             
             map.setView([coords.latitude, coords.longitude], 13);
@@ -511,13 +575,36 @@
 
         function updateMap(allCoords) {
             let updatedDevices = 0;
+            let removedDevices = 0;
+            
+            // Obtener lista de device_ids actualmente en el servidor
+            const activeDeviceIds = Object.keys(allCoords);
+            
+            // Eliminar marcadores de dispositivos que ya no están activos
+            Object.keys(markers).forEach(deviceId => {
+                if (!activeDeviceIds.includes(deviceId)) {
+                    map.removeLayer(markers[deviceId]);
+                    delete markers[deviceId];
+                    removedDevices++;
+                    addLog('warning', `Dispositivo desconectado removido del mapa`, `MAC: ${deviceId}`);
+                }
+            });
+            
+            // Actualizar o agregar marcadores de dispositivos activos
             Object.values(allCoords).forEach(coords => {
                 if (coords.device_id !== deviceId) {
                     if (markers[coords.device_id]) {
                         map.removeLayer(markers[coords.device_id]);
                     }
                     markers[coords.device_id] = L.marker([coords.latitude, coords.longitude])
-                        .bindPopup(`<b>${coords.name}</b><br>📍 ${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}`)
+                        .bindPopup(`
+                            <b>🔵 Otro Dispositivo</b><br>
+                            <b>MAC:</b> ${coords.mac || coords.device_id}<br>
+                            <b>Nombre:</b> ${coords.name}<br>
+                            📍 ${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}<br>
+                            🎯 Precisión: ±${coords.accuracy.toFixed(1)}m<br>
+                            ⏰ ${new Date(coords.timestamp).toLocaleTimeString()}
+                        `)
                         .addTo(map);
                     updatedDevices++;
                 }
@@ -525,6 +612,9 @@
             
             if (updatedDevices > 0) {
                 addLog('info', `Mapa actualizado con ${updatedDevices} dispositivos externos`);
+            }
+            if (removedDevices > 0) {
+                addLog('info', `${removedDevices} dispositivos desconectados eliminados del mapa`);
             }
         }
 
@@ -534,7 +624,12 @@
                 devicesList.innerHTML = 'No hay otros dispositivos conectados';
             } else {
                 devicesList.innerHTML = devices.map(device => `
-                    <div class="coord-item">🔹 ${device.name}: ${device.latitude.toFixed(4)}, ${device.longitude.toFixed(4)}</div>
+                    <div class="coord-item">
+                        <strong>🔹 ${device.name}</strong><br>
+                        📱 MAC: ${device.mac || device.device_id}<br>
+                        📍 ${device.latitude.toFixed(4)}, ${device.longitude.toFixed(4)}<br>
+                        ⏰ ${new Date(device.timestamp).toLocaleTimeString()}
+                    </div>
                 `).join('');
                 addLog('info', `Lista de dispositivos actualizada`, `${devices.length} dispositivos externos`);
             }

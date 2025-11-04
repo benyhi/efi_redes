@@ -7,6 +7,10 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+.*db
+.db
+.sqlite3
+*.sqlite3
 downloads/
 eggs/
 .eggs/
@@ -25,19 +29,6 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-
-# Railway
-.railway/
-
-# Local database (SQLite)
-*.db
-*.sqlite
-*.sqlite3
-
-# Environment variables
-.env
-.env.local
-.env.production
 
 # IDE
 .vscode/
